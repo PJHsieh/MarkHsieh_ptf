@@ -141,6 +141,81 @@ def simple_tcp_packet(pktlen=100,
 
     return pkt
 
+def simple_tcp_packet_with_taglist(pktlen=100,
+                       eth_dst='00:01:02:03:04:05',
+                       eth_src='00:06:07:08:09:0a',
+                       vlan_pcp=0,
+                       dl_vlan_cfi=0,
+                       ip_src='192.168.0.1',
+                       ip_dst='192.168.0.2',
+                       ip_tos=0,
+                       ip_ecn=None,
+                       ip_dscp=None,
+                       ip_ttl=64,
+                       ip_id=0x0001,
+                       ip_frag=0,
+                       tcp_sport=1234,
+                       tcp_dport=80,
+                       tcp_flags="S",
+                       ip_ihl=None,
+                       ip_options=False,
+                       with_tcp_chksum=True,
+                       taglist=[0x8100, 0x0001]
+                      ):
+    """
+    Return a simple dataplane TCP packet with multiple tags
+
+    Supports a few parameters:
+    @param pktlen Length of packet in bytes w/o CRC
+    @param eth_dst Destinatino MAC
+    @param eth_src Source MAC
+    @param vlan_pcp VLAN priority
+    @param dl_vlan_cfi The VLAN CFI value
+    @param ip_src IP source
+    @param ip_dst IP destination
+    @param ip_tos IP ToS
+    @param ip_ecn IP ToS ECN
+    @param ip_dscp IP ToS DSCP
+    @param ip_ttl IP TTL
+    @param ip_id IP ID
+    @param tcp_sport TCP source port
+    @param tcp_dport TCP destination port
+    @param tcp_flags TCP Control flags
+    @param with_tcp_chksum Valid TCP checksum
+    @param taglist The tag list
+
+    Generates a simple TCP request.  Users
+    shouldn't assume anything about this packet other than that
+    it is a valid ethernet/IP/TCP frame.
+    """
+    tpid_list = taglist[0::2]
+    vlan_list = taglist[1::2]
+
+    if MINSIZE > pktlen:
+        pktlen = MINSIZE
+
+    if with_tcp_chksum:
+        tcp_hdr = scapy.TCP(sport=tcp_sport, dport=tcp_dport, flags=tcp_flags)
+    else:
+        tcp_hdr = scapy.TCP(sport=tcp_sport, dport=tcp_dport, flags=tcp_flags, chksum=0)
+
+    ip_tos = ip_make_tos(ip_tos, ip_ecn, ip_dscp)
+
+    pkt = scapy.Ether(dst=eth_dst, src=eth_src)
+    for item in vlan_list:
+        pkt = pkt/scapy.Dot1Q(prio=vlan_pcp, id=dl_vlan_cfi, vlan=item)
+
+    pkt = pkt/scapy.IP(src=ip_src, dst=ip_dst, tos=ip_tos, ttl=ip_ttl, id=ip_id, ihl=ip_ihl)/ \
+          tcp_hdr
+
+    for i in range(1,len(tpid_list)):
+        pkt[Dot1Q:i].type=tpid_list[i]
+    pkt.type=tpid_list[0]
+    pkt = pkt/("".join([chr(x % 256) for x in xrange(pktlen - len(pkt))]))
+
+    return pkt
+
+
 def simple_tcpv6_packet(pktlen=100,
                         eth_dst='00:01:02:03:04:05',
                         eth_src='00:06:07:08:09:0a',
@@ -1524,6 +1599,40 @@ def simple_eth_packet(pktlen=60,
     pkt = scapy.Ether(dst=eth_dst, src=eth_src, type=eth_type)
 
     pkt = pkt/("0" * (pktlen - len(pkt)))
+
+    return pkt
+
+def simple_eth_packet_with_taglist(pktlen=60,
+                      eth_dst='00:01:02:03:04:05',
+                      eth_src='00:06:07:08:09:0a',
+                      taglist=[0x8100, 0x0001]):
+    """
+    Return a simple dataplane Layer 2 packet with multiple tags
+
+    Supports a few parameters:
+    @param pktlen Length of packet in bytes w/o CRC
+    @param eth_dst Destinatino MAC
+    @param eth_src Source MAC
+    @param taglist The tag list
+
+    Generates a simple Layer 2 packet.
+    """
+    tpid_list = taglist[0::2]
+    vlan_list = taglist[1::2]
+
+    if MINSIZE > pktlen:
+        pktlen = MINSIZE
+
+    pkt = scapy.Ether(dst=eth_dst, src=eth_src)
+
+    for item in vlan_list:
+        pkt = pkt/scapy.Dot1Q(vlan=item)
+
+    for i in range(1,len(tpid_list)):
+        pkt[Dot1Q:i].type=tpid_list[i]
+
+    pkt.type=tpid_list[0]
+    pkt = pkt/("".join([chr(x % 256) for x in xrange(pktlen - len(pkt))]))
 
     return pkt
 
